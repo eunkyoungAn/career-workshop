@@ -64,4 +64,6 @@ export function series(wheel){
  return {baseline,goal,after};
 }
 export function escapeHTML(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+export function nicknameValue(value){return typeof value==='string'?value.normalize('NFKC').trim().replace(/\s+/g,' '):'';}
+export function nicknameError(value){const name=nicknameValue(value);if(!name)return '수업에서 사용할 닉네임을 입력해 주세요.';if(Array.from(name).length>20)return '닉네임은 20자 이내로 적어 주세요.';if(!/^[\p{L}\p{M}\p{N} _-]+$/u.test(name))return '닉네임은 한글·영문·숫자, 공백, - 또는 _로 적어 주세요.';return '';}
 export function safeDraft(raw){const d=emptyDraft();for(const s of SECTIONS){try{d[s.key]=sanitizeSection(s.key,raw?.[s.key]||d[s.key]);}catch{}}d.shared=raw?.shared&&typeof raw.shared==='object'?raw.shared:{};return d;}
