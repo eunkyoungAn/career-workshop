@@ -1,8 +1,8 @@
-import {ASSETS,STRENGTH_QUESTIONS,AREAS,SECTIONS,PHASES,emptyDraft,safeDraft,sanitizeSection,validation,completedAnswers,escapeHTML as e,nicknameValue,nicknameError} from './data.js';
-import {read,write,createRoom,joinURL,Classroom,Participant} from './room.js';
-import {mountWheel} from './wheel.js';
-import {planImage,wheelImage,download} from './export.js';
-import {isTeacherUnlocked,unlockTeacher,lockTeacher,readTeacherRoom,migrateTeacherRooms} from './teacher-auth.js';
+import {ASSETS,STRENGTH_QUESTIONS,AREAS,SECTIONS,PHASES,emptyDraft,safeDraft,sanitizeSection,validation,completedAnswers,escapeHTML as e,nicknameValue,nicknameError} from './data.js?v=20261015-rooms1';
+import {read,write,createRoom,joinURL,Classroom,Participant} from './room.js?v=20261015-rooms1';
+import {mountWheel} from './wheel.js?v=20261015-rooms1';
+import {planImage,wheelImage,download} from './export.js?v=20261015-rooms1';
+import {isTeacherUnlocked,unlockTeacher,lockTeacher,readTeacherRoom,migrateTeacherRooms,deleteTeacherRoom,isRoomDeleted} from './teacher-auth.js?v=20261015-rooms1';
 const app=document.querySelector('#app'),modal=document.querySelector('#modal');
 document.querySelector('#skip-main').onclick=()=>{const main=app.querySelector('main');if(main){main.tabIndex=-1;main.focus();}};
 let draft=emptyDraft(),draftKey='',context={room:'',key:''},section='assets',phase='baseline',host=null,student=null,boardSection='assets',selected='',previewURL=null,saveTimer=null;
@@ -13,7 +13,7 @@ function showModal(html){document.querySelector('#modal-content').innerHTML=html
 modal.addEventListener('click',event=>{if(event.target===modal)modal.close();});
 const linkTo=s=>`#/work/${s}${context.room?'?room='+context.room+'&key='+context.key:''}`;
 function header(extra=''){return `<header class="site-header"><a class="brand" href="#/"><span class="brand-mark">N</span><span>내일의 나<small>CAREER WORKSHOP</small></span></a><div class="header-actions">${extra||'<a class="quiet-link" href="#/teacher">강사 공간 ↗</a>'}${isTeacherUnlocked()?'<button class="text-button" data-teacher-lock>강사 공간 잠금</button>':''}</div></header>`;}
-function teacherLogin(){app.innerHTML=header('<a class="quiet-link" href="#/">참여자 홈 ↗</a>')+`<main class="teacher-login"><div class="lock-symbol" aria-hidden="true">⌑</div><span class="eyebrow">FACILITATOR ACCESS</span><h1>강사 공간</h1><p>강사번호를 입력하면 수업방을 열고<br>공유된 응답을 확인할 수 있어요.</p><form id="teacher-login-form" class="question-card"><label class="field"><span>강사번호</span><input id="teacher-number" type="password" inputmode="numeric" autocomplete="current-password" maxlength="45" placeholder="강사번호를 입력하세요" required aria-describedby="teacher-login-error"></label><p id="teacher-login-error" class="login-error" role="alert"></p><button class="button primary full" id="teacher-login-submit">강사 공간 들어가기 →</button><p class="subtle">강사번호는 교육생에게 공유하지 마세요.<br>새 창이나 새로고침 후에는 다시 입력합니다.</p></form><a class="quiet-link" href="#/">← 교육생 참여 화면으로</a></main>`+footer();
+function teacherLogin(){app.innerHTML=header('<a class="quiet-link" href="#/">참여자 홈 ↗</a>')+`<main class="teacher-login"><div class="lock-symbol" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg></div><span class="eyebrow">FACILITATOR ACCESS</span><h1>강사 공간</h1><p>강사번호를 입력하면 수업방을 열고<br>공유된 응답을 확인할 수 있어요.</p><form id="teacher-login-form" class="question-card"><label class="field"><span>강사번호</span><input id="teacher-number" type="password" inputmode="numeric" autocomplete="current-password" maxlength="45" placeholder="강사번호를 입력하세요" required aria-describedby="teacher-login-error"></label><p id="teacher-login-error" class="login-error" role="alert"></p><button class="button primary full" id="teacher-login-submit">강사 공간 들어가기 →</button><p class="subtle">강사번호는 교육생에게 공유하지 마세요.<br>새 창이나 새로고침 후에는 다시 입력합니다.</p></form><a class="quiet-link" href="#/">← 교육생 참여 화면으로</a></main>`+footer();
  document.querySelector('#teacher-login-form').onsubmit=async event=>{event.preventDefault();const button=document.querySelector('#teacher-login-submit'),input=document.querySelector('#teacher-number'),error=document.querySelector('#teacher-login-error');if(button.disabled)return;button.disabled=true;button.textContent='강사 확인 중…';error.textContent='';try{await unlockTeacher(input.value);input.value='';await migrateTeacherRooms();await route();}catch(cause){lockTeacher();error.textContent=cause.message||'강사 정보를 확인하지 못했습니다. 다시 시도해 주세요.';input.setAttribute('aria-invalid','true');button.disabled=false;button.textContent='강사 공간 들어가기 →';}};
 }
 function closeTeacherSession(broadcast=true){host?.stop();host=null;lockTeacher();if(modal.open)modal.close();if(broadcast)write('teacher-lock',Date.now());if(currentMode==='teacher'||currentMode==='screen')route();else if(currentMode==='home')home();}
@@ -69,7 +69,46 @@ async function exportResult(type){
  document.querySelector('#download-image').onclick=()=>download(blob,name);document.querySelector('#share-image').onclick=async()=>{const file=new File([blob],name,{type:'image/png'});if(navigator.canShare?.({files:[file]})){try{await navigator.share({files:[file],title:'나의 커리어 워크숍'});}catch(error){if(error.name!=='AbortError')toast('이미지 다운로드 버튼을 이용해 주세요.');}}else toast('이미지 다운로드를 누르거나 이미지를 길게 눌러 저장해 주세요.');};
  }catch(error){toast(error.message||'이미지 저장에 실패했습니다. 다시 시도해 주세요.');}
 }
-async function teacherHome(){const rooms=(await Promise.all(read('rooms',[]).map(id=>readTeacherRoom(id)))).filter(Boolean);if(currentMode!=='teacher'||!isTeacherUnlocked())return;app.innerHTML=header('<a class="quiet-link" href="#/">참여자 홈 ↗</a>')+`<main class="teacher-home"><span class="eyebrow">FACILITATOR SPACE</span><h1>함께 발견하는 가능성</h1><p class="lead">수업방을 만들고 참여 링크를 나눠 주세요.<br>공유된 익명 응답을 한 화면에서 살펴볼 수 있어요.</p><div class="create-room question-card"><h2>새 수업방 만들기</h2><label class="field"><span>수업 이름</span><input id="room-title" maxlength="80" value="M365 커리어 워크숍" autocomplete="off"></label><button class="button primary" id="create-room">수업방 열기 →</button><p class="subtle">수업 중 이 강사 화면을 열어 두세요. 응답은 강사 기기에 저장되며, 다른 기기에서는 같은 수업방을 관리할 수 없습니다.</p></div>${rooms.length?'<h2 class="saved-title">이 기기의 수업방</h2>':''}<div class="room-list">${rooms.map(r=>`<a class="room-list-item" href="#/teacher/${r.id}"><span><b>${e(r.title)}</b><small>${new Date(r.created).toLocaleDateString('ko-KR')} · 공유 참여자 ${Object.values(r.people).filter(p=>Object.keys(p.sections).length).length}명</small></span><span>이어 열기 →</span></a>`).join('')}</div><div class="notice"><b>수업 진행 순서</b><span>① 수업방 열기 → ② 참여 링크·QR 배포 → ③ 익명 공유 받기 → ④ 발표 화면 띄우기</span></div></main>`+footer();document.querySelector('#create-room').onclick=async event=>{event.target.disabled=true;try{const room=await createRoom(document.querySelector('#room-title').value);location.hash='#/teacher/'+room.id;}catch{toast('수업방을 저장하지 못했습니다. 브라우저 저장 공간을 확인해 주세요.');event.target.disabled=false;}};}
+async function teacherHome(){
+ const revision=routeRevision;
+ const rooms=(await Promise.all(read('rooms',[]).map(id=>readTeacherRoom(id)))).filter(Boolean);
+ if(revision!==routeRevision||currentMode!=='teacher'||!isTeacherUnlocked())return;
+ app.innerHTML=header('<a class="quiet-link" href="#/">참여자 홈 ↗</a>')+`<main class="teacher-home">
+ <span class="eyebrow">FACILITATOR SPACE</span><h1>함께 발견하는 가능성</h1>
+ <div class="teacher-access-status"><span>✓ 강사번호 확인 완료</span><button class="text-button" data-teacher-lock>잠그고 다시 입력</button></div>
+ <p class="lead">수업방을 만들고 참여 링크를 나눠 주세요.<br>교육생의 닉네임과 공유된 응답을 함께 살펴볼 수 있어요.</p>
+ <form id="create-room-form" class="create-room question-card"><h2>새 수업방 만들기</h2>
+ <label class="field"><span>수업 이름</span><input id="room-title" maxlength="80" value="M365 커리어 워크숍" autocomplete="off" required></label>
+ <button class="button primary" id="create-room" type="submit">＋ 새 수업방 생성</button>
+ <p class="subtle">수업 중 이 강사 화면을 열어 두세요. 응답은 강사 기기에 저장되며, 다른 기기에서는 같은 수업방을 관리할 수 없습니다.</p></form>
+ <div class="saved-heading"><h2>이 기기의 수업방</h2><span>${rooms.length}개</span></div>
+ <div class="room-list">${rooms.length?rooms.map(r=>`<article class="room-list-item" data-room-id="${e(r.id)}"><div class="room-summary"><h3>${e(r.title)}</h3><small>${new Date(r.created).toLocaleDateString('ko-KR')} · 공유 참여자 ${sharedCount(r)}명</small></div><div class="room-actions"><a class="button secondary" href="#/teacher/${e(r.id)}">이어 열기 →</a><button class="button delete-outline" data-delete-room="${e(r.id)}" aria-label="${e(r.title)} 삭제">삭제</button></div></article>`).join(''):'<div class="empty-rooms"><b>아직 만든 수업방이 없어요.</b><p>위에서 수업 이름을 적고 첫 수업방을 만들어 주세요.</p></div>'}</div>
+ <div class="notice"><b>수업 진행 순서</b><span>① 수업방 생성 → ② 참여 링크·QR 배포 → ③ 익명 공유 받기 → ④ 발표 화면 띄우기</span></div></main>`+footer();
+ document.querySelector('#create-room-form').onsubmit=async event=>{
+  event.preventDefault();const button=document.querySelector('#create-room'),input=document.querySelector('#room-title');if(button.disabled)return;
+  const title=input.value.trim();if(!title){input.setCustomValidity('수업 이름을 입력해 주세요.');input.reportValidity();return;}
+  button.disabled=true;button.textContent='수업방 만드는 중…';
+  try{const room=await createRoom(title);location.hash='#/teacher/'+room.id;}catch{toast('수업방을 저장하지 못했습니다. 브라우저 저장 공간을 확인해 주세요.');button.disabled=false;button.textContent='＋ 새 수업방 생성';}
+ };
+ document.querySelector('#room-title').oninput=event=>event.target.setCustomValidity('');
+ document.querySelectorAll('[data-delete-room]').forEach(button=>button.onclick=()=>confirmRoomDeletion(rooms.find(room=>room.id===button.dataset.deleteRoom)));
+}
+function sharedCount(room){return Object.values(room.people).filter(person=>Object.keys(person.sections).length).length;}
+function confirmRoomDeletion(room){
+ if(!room)return;
+ showModal(`<button class="close" data-close aria-label="닫기">×</button><span class="eyebrow">DELETE CLASSROOM</span><h2>이 수업방을 삭제할까요?</h2><div class="delete-room-summary"><b>${e(room.title)}</b><span>공유 참여자 ${sharedCount(room)}명 · 이 기기에 저장된 응답 포함</span></div><p>수업방과 공유된 응답은 복구할 수 없고, 기존 참여 링크로는 더 이상 공유할 수 없어요. 교육생 기기의 개인 작성 내용은 남아 있습니다.</p><p id="delete-error" class="login-error" role="alert"></p><div class="delete-actions"><button class="button secondary" id="cancel-delete">취소</button><button class="button danger" id="confirm-delete">수업방과 응답 삭제</button></div>`);
+ document.querySelector('#cancel-delete').onclick=()=>modal.close();
+ document.querySelector('#confirm-delete').onclick=async event=>{
+  event.target.disabled=true;
+  try{
+   deleteTeacherRoom(room.id);
+   if(host?.room.id===room.id){host.stop();host=null;}
+   modal.close();selected='';
+   if(location.hash==='#/teacher')await route();else location.hash='#/teacher';
+   toast('수업방과 공유된 응답을 삭제했습니다.');
+  }catch{document.querySelector('#delete-error').textContent='삭제를 완료하지 못했습니다. 브라우저 저장 공간을 확인한 뒤 다시 시도해 주세요.';event.target.disabled=false;}
+ };
+}
 function sectionContent(s,value,compact=false){
  if(s==='assets')return ASSETS.map(a=>`<div class="answer"><b>${a.title}</b><p>${e(value[a.key])}</p></div>`).join('');
  if(s==='strength')return `<blockquote>${e(value.sentence)}</blockquote>${value.disc?`<span class="chip">DISC · ${e(value.disc==='unknown'?'결과 없음':value.disc==='mixed'?'복합 유형':value.disc)}</span>`:''}${compact?'':STRENGTH_QUESTIONS.map(([k,title])=>`<div class="answer"><b>${title}</b><p>${e(value[k])}</p></div>`).join('')}`;
@@ -86,7 +125,7 @@ function teacherBoard(room,projection=false){
  document.querySelectorAll('.hide-response').forEach(el=>el.onclick=async()=>{room.people[el.dataset.id].hidden[boardSection]=!room.people[el.dataset.id].hidden[boardSection];try{await host.persist();}catch{toast('변경을 저장하지 못했습니다.');}});
  if(projection){document.querySelector('#fullscreen').onclick=()=>{if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen?.().catch(()=>toast('브라우저의 전체 화면 기능을 이용해 주세요.'));};return;}
  document.querySelector('#invite').onclick=()=>invite(room);
- document.querySelector('#room-delete').onclick=()=>{showModal('<button class="close" data-close aria-label="닫기">×</button><h2>수업방을 삭제할까요?</h2><p>이 기기에 저장된 익명 응답과 수업방이 삭제됩니다. 기존 참여 링크로는 더 이상 공유할 수 없습니다. 교육생 기기의 개인 작성 내용은 남아 있습니다.</p><button class="button danger" id="confirm-delete">수업방과 응답 삭제</button>');document.querySelector('#confirm-delete').onclick=()=>{host.stop();host=null;write('room:'+room.id,null);write('rooms',read('rooms',[]).filter(id=>id!==room.id));modal.close();location.hash='#/teacher';};};
+ document.querySelector('#room-delete').onclick=()=>confirmRoomDeletion(room);
 }
 function invite(room){const url=joinURL(room);showModal(`<button class="close" data-close aria-label="닫기">×</button><span class="eyebrow">JOIN OUR CLASS</span><h2>함께 참여해요</h2><p>휴대폰 카메라로 QR을 비추거나 참여 링크를 열어 주세요.</p><div id="qr-code" class="qr-code"></div><label class="field"><span>교육생 참여 링크</span><input id="invite-url" readonly value="${e(url)}"></label><button class="button primary full" id="copy-invite">참여 링크 복사</button><p class="subtle">실명·회원가입 없이 닉네임으로 참여할 수 있어요.</p>`);const qr=qrcode(0,'M');qr.addData(url);qr.make();document.querySelector('#qr-code').innerHTML=qr.createSvgTag({scalable:true});document.querySelector('#copy-invite').onclick=async()=>{try{await navigator.clipboard.writeText(url);toast('참여 링크를 복사했습니다.');}catch{document.querySelector('#invite-url').select();toast('선택된 링크를 복사해 주세요.');}};}
 let routeRevision=0;
@@ -98,14 +137,31 @@ async function route(){
  if((mode==='teacher'||mode==='screen')&&!isTeacherUnlocked()){teacherLogin();window.scrollTo(0,0);return;}
  if(mode==='join'){const room=parts[1],key=params.get('key');if(!/^[a-f0-9-]{36}$/.test(room||'')||!key||key.length>160){toast('참여 링크를 확인해 주세요.');location.hash='#/';return;}location.replace('#/work/assets?room='+room+'&key='+key);return;}
  if(mode==='work'){context={room:params.get('room')||'',key:params.get('key')||''};section=SECTIONS.some(s=>s.key===parts[1])?parts[1]:'assets';switchDraft();if(context.room&&nicknameError(read('nickname:'+context.room,''))){student?.stop();student=null;nicknameEntry();window.scrollTo(0,0);return;}connectStudent();work();}
- else if(mode==='teacher'&&parts[1]){let room;try{room=await readTeacherRoom(parts[1]);}catch{toast('저장된 수업방을 열지 못했습니다. 강사번호를 확인해 주세요.');closeTeacherSession();return;}if(revision!==routeRevision)return;if(!room){app.innerHTML=header()+'<main class="teacher-home"><h1>이 기기에 수업방이 없어요.</h1><p>수업방을 만든 브라우저에서 다시 열어 주세요.</p><a class="button primary" href="#/teacher">강사 공간으로</a></main>';return;}if(host?.room.id!==room.id){host?.stop();host=new Classroom(room,()=>{if(currentMode==='teacher'&&host&&isTeacherUnlocked())teacherBoard(host.room);});host.start();}teacherBoard(host.room);}
+ else if(mode==='teacher'&&parts[1]){let room;try{room=await readTeacherRoom(parts[1]);}catch{toast('저장된 수업방을 열지 못했습니다. 강사번호를 확인해 주세요.');closeTeacherSession();return;}if(revision!==routeRevision)return;if(!room){host?.stop();host=null;app.innerHTML=header()+'<main class="teacher-home"><h1>이 기기에 수업방이 없어요.</h1><p>삭제된 수업방이거나 다른 브라우저에서 만든 수업방입니다.</p><a class="button primary" href="#/teacher">강사 공간으로</a></main>';return;}if(host?.room.id!==room.id){host?.stop();host=new Classroom(room,()=>{if(currentMode==='teacher'&&host&&isTeacherUnlocked())teacherBoard(host.room);});host.start();}teacherBoard(host.room);}
  else if(mode==='teacher'){if(host){host.stop();host=null;}await teacherHome();}
- else if(mode==='screen'){let room;try{room=await readTeacherRoom(parts[1]);}catch{closeTeacherSession();return;}if(revision!==routeRevision)return;if(room)teacherBoard(room,true);else app.innerHTML='<main class="teacher-home"><h1>강사의 수업방을 먼저 열어 주세요.</h1><a href="#/teacher">강사 공간으로 이동</a></main>';}
+ else if(mode==='screen'){let room;try{room=await readTeacherRoom(parts[1]);}catch{closeTeacherSession();return;}if(revision!==routeRevision)return;if(room)teacherBoard(room,true);else app.innerHTML='<main class="teacher-home"><h1>수업방이 삭제되었거나 이 기기에 없어요.</h1><a href="#/teacher">강사 공간으로 이동</a></main>';}
  else home();
  window.scrollTo(0,0);
 }
 window.addEventListener('hashchange',route);
-window.addEventListener('storage',async event=>{if(event.key==='career-v1:teacher-lock'&&isTeacherUnlocked()){closeTeacherSession(false);return;}if(currentMode==='screen'&&isTeacherUnlocked()&&event.key?.startsWith('career-v1:room:')){try{const id=location.hash.split('/')[2];const room=await readTeacherRoom(id);if(isTeacherUnlocked()){if(room)teacherBoard(room,true);else route();}}catch{closeTeacherSession(false);}}});
+window.addEventListener('storage',async event=>{
+ if(event.key==='career-v1:teacher-lock'&&isTeacherUnlocked()){closeTeacherSession(false);return;}
+ if(!isTeacherUnlocked())return;
+ const path=location.hash.slice(1).split('?')[0].split('/').filter(Boolean),id=path[1];
+ if(event.key==='career-v1:deleted-room:'+id&&isRoomDeleted(id)){
+  if(host?.room.id===id){host.stop();host=null;}
+  if(modal.open)modal.close();
+  if(currentMode==='teacher'){location.hash='#/teacher';toast('다른 화면에서 이 수업방을 삭제했습니다.');}
+  else if(currentMode==='screen')await route();
+  return;
+ }
+ if(currentMode==='teacher'&&!id&&event.key==='career-v1:rooms'){await route();return;}
+ if(currentMode==='screen'&&event.key==='career-v1:room:'+id){
+  const revision=routeRevision;
+  try{const room=await readTeacherRoom(id);if(isTeacherUnlocked()&&revision===routeRevision){if(room)teacherBoard(room,true);else await route();}}
+  catch{closeTeacherSession(false);}
+ }
+});
 window.addEventListener('beforeunload',()=>{if(draftKey)persistDraft();});
 window.addEventListener('pagehide',()=>{if(draftKey)persistDraft();});
 route();

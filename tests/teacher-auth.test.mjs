@@ -8,7 +8,7 @@ const key=await crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt,itera
 const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:enc.encode(JSON.stringify(['career-teacher-authority-v1']))},key,enc.encode(JSON.stringify(await crypto.subtle.exportKey('jwk',pair.privateKey))));
 const settings={iterations:1000,salt:pack(salt),iv:pack(iv),encryptedAuthority:pack(cipher),publicKey:await crypto.subtle.exportKey('jwk',pair.publicKey)};
 globalThis.fetch=async()=>new Response(JSON.stringify(settings));
-const storage=new Map();globalThis.localStorage={getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v)};
+const storage=new Map();globalThis.localStorage={getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};
 const auth=await import('../teacher-auth.js');
 test('Instructor number gates capabilities and encrypts classroom data',async()=>{
  assert.equal(auth.isTeacherUnlocked(),false);
@@ -23,5 +23,29 @@ test('Instructor number gates capabilities and encrypts classroom data',async()=
  auth.lockTeacher();assert.equal(auth.isTeacherUnlocked(),false);await assert.rejects(auth.readTeacherRoom('test-room'));await assert.rejects(auth.authorizeRoom(room));
  await auth.unlockTeacher('4826');const broken=JSON.parse(stored);broken.data='AAAA'+broken.data.slice(4);storage.set('career-v1:room:test-room',JSON.stringify(broken));await assert.rejects(auth.readTeacherRoom('test-room'));
  const legacy={id:'old-room',identity:{pub:'old-key',private:'LEGACY-SECRET'},title:'기존 수업방',people:{}};storage.set('career-v1:room:old-room',JSON.stringify(legacy));const restored=await auth.readTeacherRoom('old-room');assert.equal(restored.title,'기존 수업방');assert.ok(restored.authorization);assert.ok(!storage.get('career-v1:room:old-room').includes('LEGACY-SECRET'));
+ auth.lockTeacher();
+});
+test('Deleting a room preserves other rooms and rejects pending or stale saves',async()=>{
+ assert.throws(()=>auth.deleteTeacherRoom('delete-room'),/강사번호/);
+ await auth.unlockTeacher('4826');
+ const room={id:'delete-room',title:'삭제할 수업',identity:{pub:'delete-key'},people:{learner:{answer:'response'}}};
+ const other={id:'keep-room',title:'유지할 수업',identity:{pub:'keep-key'},people:{}};
+ await auth.authorizeRoom(room);await auth.authorizeRoom(other);
+ await auth.saveTeacherRoom(room);await auth.saveTeacherRoom(other);
+ storage.set('career-v1:rooms',JSON.stringify([room.id,other.id]));
+ storage.set('career-v1:draft:delete-room','personal draft');
+ const pending=auth.saveTeacherRoom(room);
+ const rejection=assert.rejects(pending,/삭제된/);
+ auth.deleteTeacherRoom(room.id);await rejection;
+ assert.equal(storage.has('career-v1:room:'+room.id),false);
+ assert.equal(await auth.readTeacherRoom(room.id),null);
+ assert.deepEqual(JSON.parse(storage.get('career-v1:rooms')),[other.id]);
+ assert.deepEqual(await auth.readTeacherRoom(other.id),other);
+ assert.equal(storage.get('career-v1:draft:delete-room'),'personal draft');
+ await assert.rejects(auth.saveTeacherRoom(room),/삭제된/);
+ // Even an older tab writing old-format data cannot make a deleted room readable.
+ storage.set('career-v1:room:'+room.id,JSON.stringify(room));
+ assert.equal(await auth.readTeacherRoom(room.id),null);
+ auth.deleteTeacherRoom(room.id);assert.equal(storage.has('career-v1:room:'+room.id),false);
  auth.lockTeacher();
 });

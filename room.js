@@ -1,5 +1,5 @@
-import {sanitizeSection,validation,SECTIONS,nicknameValue,nicknameError} from './data.js';
-import {authorizeRoom,isTeacherUnlocked,saveTeacherRoom,verifyTeacherRoom} from './teacher-auth.js';
+import {sanitizeSection,validation,SECTIONS,nicknameValue,nicknameError} from './data.js?v=20261015-rooms1';
+import {authorizeRoom,isTeacherUnlocked,saveTeacherRoom,verifyTeacherRoom} from './teacher-auth.js?v=20261015-rooms1';
 const prefix='career-v1:';
 const enc=new TextEncoder();
 export const read=(key,fallback=null)=>{try{return JSON.parse(localStorage.getItem(prefix+key))??fallback;}catch{return fallback;}};
@@ -16,23 +16,23 @@ export function joinURL(room){return `${location.origin}${location.pathname}#/jo
 const safeMessage=data=>data&&typeof data==='object'&&!Array.isArray(data)&&JSON.stringify(data).length<48000;
 const allowed=new Set(SECTIONS.map(s=>s.key));
 export class Classroom {
- constructor(room,onChange){this.room=room;this.onChange=onChange;this.connections=new Map();this.peer=null;this.status='수업방 연결 중';this.persistQueue=Promise.resolve();}
+ constructor(room,onChange){this.room=room;this.onChange=onChange;this.connections=new Map();this.peer=null;this.status='수업방 연결 중';this.persistQueue=Promise.resolve();this.stopped=false;}
  start(){
   if(!isTeacherUnlocked())throw new Error('강사번호를 먼저 입력해 주세요.');
   this.peer=new Peer('career-'+this.room.id,{debug:0});
   this.peer.on('open',()=>{this.status='수업방 열림';this.emit();});
   this.peer.on('connection',c=>this.accept(c));
   this.peer.on('error',e=>{this.status=e.type==='unavailable-id'?'이 수업방이 다른 화면에서 열려 있습니다.':'연결 오류 · 인터넷 연결 후 다시 열어 주세요.';this.emit();});
-  this.peer.on('disconnected',()=>{this.status='수업방 연결 끊김 · 다시 연결 중';this.emit();if(!this.peer.destroyed)this.peer.reconnect();});
+  this.peer.on('disconnected',()=>{this.status='수업방 연결 끊김 · 다시 연결 중';this.emit();if(!this.stopped&&!this.peer.destroyed)this.peer.reconnect();});
  }
- emit(){this.onChange?.(this);}
- async persist(){const save=this.persistQueue.catch(()=>{}).then(()=>saveTeacherRoom(this.room));this.persistQueue=save;await save;this.emit();}
+ emit(){if(!this.stopped)this.onChange?.(this);}
+ async persist(){const save=this.persistQueue.catch(()=>{}).then(()=>{if(this.stopped)throw new Error('수업방 연결이 종료되었습니다.');return saveTeacherRoom(this.room);});this.persistQueue=save;await save;this.emit();}
  accept(c){
   const clientNonce=c.metadata?.nonce;const nonce=crypto.randomUUID();let id=null;let authenticated=false;let busy=false;
   const deadline=setTimeout(()=>{if(!authenticated)c.close();},15000);
   c.on('open',async()=>{try{if(!this.room.open||!isTeacherUnlocked()||typeof clientNonce!=='string'||clientNonce.length>80)return c.close();c.send({type:'hello',nonce,authorization:this.room.authorization,signature:await sign(this.room.identity,canonical('career-v1',this.room.id,clientNonce,nonce))});}catch{c.close();}});
   c.on('data',async data=>{
-   if(busy||!safeMessage(data))return;busy=true;
+   if(this.stopped||busy||!safeMessage(data))return;busy=true;
    try{
     if(!authenticated){if(data.type!=='auth'||typeof data.pub!=='string'||data.pub.length>200||!await verify(data.pub,data.signature,canonical('career-student-v1',this.room.id,clientNonce,nonce)))return c.close();
      const issue=nicknameError(data.nickname);if(issue){c.send({type:'profile-error',message:issue});return;}
@@ -54,7 +54,7 @@ export class Classroom {
   c.on('close',()=>{clearTimeout(deadline);if(this.connections.get(id)===c)this.connections.delete(id);this.emit();});
   c.on('error',()=>c.close());
  }
- stop(){this.peer?.destroy();this.connections.clear();}
+ stop(){this.stopped=true;this.peer?.destroy();this.connections.clear();}
 }
 export class Participant {
  constructor(room,key,onChange,nickname=''){this.room=room;this.key=key;this.nickname=nicknameValue(nickname);this.onChange=onChange;this.status='수업방 연결 중';this.ready=false;this.pending=new Map();this.closed=false;}

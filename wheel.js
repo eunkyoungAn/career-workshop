@@ -1,4 +1,4 @@
-import {AREAS,PHASES,series,escapeHTML as e} from './data.js';
+import {AREAS,PHASES,series,escapeHTML as e} from './data.js?v=20261015-rooms1';
 export const COLORS={baseline:'#345ce6',goal:'#cc7616',after:'#008578'};
 const point=(i,score,r=170)=>[300+Math.sin(i*Math.PI/4)*r*score/10,270-Math.cos(i*Math.PI/4)*r*score/10];
 const points=values=>values.map((v,i)=>point(i,v).join(',')).join(' ');

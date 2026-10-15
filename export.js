@@ -1,5 +1,5 @@
-import {ASSETS,AREAS,PHASES,validation} from './data.js';
-import {wheelSVG} from './wheel.js';
+import {ASSETS,AREAS,PHASES,validation} from './data.js?v=20261015-rooms1';
+import {wheelSVG} from './wheel.js?v=20261015-rooms1';
 const font='"Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 export async function planImage(plan,strength=''){
  const issue=validation('plan',plan);if(issue)throw new Error(issue);
