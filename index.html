@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#345ce6">
+  <meta name="description" content="커리어 자산, 강점 발견, 코칭 휠, 취업 계획서를 연결하는 익명 참여 워크숍">
+  <meta name="referrer" content="no-referrer">
+  <title>내일의 나 · 커리어 워크숍</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="./vendor/peerjs.min.js"></script>
+  <script defer src="./vendor/qrcode.js"></script>
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <button class="skip" id="skip-main">본문으로 이동</button>
+  <div id="app"><div class="loading">내일의 나를 준비하고 있어요…</div></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="modal"><div id="modal-content"></div></dialog>
+  <noscript>활동을 작성하려면 브라우저에서 JavaScript를 허용해 주세요.</noscript>
+</body>
+</html>
