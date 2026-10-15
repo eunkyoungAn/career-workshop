@@ -1,4 +1,5 @@
 import {sanitizeSection,validation,SECTIONS} from './data.js';
+import {authorizeRoom,isTeacherUnlocked,saveTeacherRoom,verifyTeacherRoom} from './teacher-auth.js';
 const prefix='career-v1:';
 const enc=new TextEncoder();
 export const read=(key,fallback=null)=>{try{return JSON.parse(localStorage.getItem(prefix+key))??fallback;}catch{return fallback;}};
@@ -10,13 +11,14 @@ export async function makeIdentity(){const pair=await crypto.subtle.generateKey(
 async function sign(identity,bytes){const key=await crypto.subtle.importKey('jwk',identity.private,{name:'ECDSA',namedCurve:'P-256'},false,['sign']);return encode(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},key,bytes));}
 async function verify(pub,sig,bytes){try{const key=await crypto.subtle.importKey('raw',decode(pub),{name:'ECDSA',namedCurve:'P-256'},false,['verify']);return await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},key,decode(sig),bytes);}catch{return false;}}
 async function identityId(pub){return encode(await crypto.subtle.digest('SHA-256',enc.encode(pub))).slice(0,24);}
-export async function createRoom(title){const identity=await makeIdentity();const room={id:crypto.randomUUID(),title:String(title||'M365 커리어 워크숍').slice(0,80),identity,created:Date.now(),open:true,people:{}};write('room:'+room.id,room);const rooms=read('rooms',[]);write('rooms',[room.id,...rooms]);return room;}
+export async function createRoom(title){if(!isTeacherUnlocked())throw new Error('강사번호를 먼저 입력해 주세요.');const identity=await makeIdentity();const room={id:crypto.randomUUID(),title:String(title||'M365 커리어 워크숍').slice(0,80),identity,created:Date.now(),open:true,people:{}};await authorizeRoom(room);await saveTeacherRoom(room);const rooms=read('rooms',[]);write('rooms',[room.id,...rooms]);return room;}
 export function joinURL(room){return `${location.origin}${location.pathname}#/join/${room.id}?key=${room.identity.pub}`;}
 const safeMessage=data=>data&&typeof data==='object'&&!Array.isArray(data)&&JSON.stringify(data).length<48000;
 const allowed=new Set(SECTIONS.map(s=>s.key));
 export class Classroom {
- constructor(room,onChange){this.room=room;this.onChange=onChange;this.connections=new Map();this.peer=null;this.status='수업방 연결 중';}
+ constructor(room,onChange){this.room=room;this.onChange=onChange;this.connections=new Map();this.peer=null;this.status='수업방 연결 중';this.persistQueue=Promise.resolve();}
  start(){
+  if(!isTeacherUnlocked())throw new Error('강사번호를 먼저 입력해 주세요.');
   this.peer=new Peer('career-'+this.room.id,{debug:0});
   this.peer.on('open',()=>{this.status='수업방 열림';this.emit();});
   this.peer.on('connection',c=>this.accept(c));
@@ -24,11 +26,11 @@ export class Classroom {
   this.peer.on('disconnected',()=>{this.status='수업방 연결 끊김 · 다시 연결 중';this.emit();if(!this.peer.destroyed)this.peer.reconnect();});
  }
  emit(){this.onChange?.(this);}
- persist(){write('room:'+this.room.id,this.room);this.emit();}
+ async persist(){const save=this.persistQueue.catch(()=>{}).then(()=>saveTeacherRoom(this.room));this.persistQueue=save;await save;this.emit();}
  accept(c){
   const clientNonce=c.metadata?.nonce;const nonce=crypto.randomUUID();let id=null;let authenticated=false;let busy=false;
   const deadline=setTimeout(()=>{if(!authenticated)c.close();},15000);
-  c.on('open',async()=>{try{if(!this.room.open||typeof clientNonce!=='string'||clientNonce.length>80)return c.close();c.send({type:'hello',nonce,signature:await sign(this.room.identity,canonical('career-v1',this.room.id,clientNonce,nonce))});}catch{c.close();}});
+  c.on('open',async()=>{try{if(!this.room.open||!isTeacherUnlocked()||typeof clientNonce!=='string'||clientNonce.length>80)return c.close();c.send({type:'hello',nonce,authorization:this.room.authorization,signature:await sign(this.room.identity,canonical('career-v1',this.room.id,clientNonce,nonce))});}catch{c.close();}});
   c.on('data',async data=>{
    if(busy||!safeMessage(data))return;busy=true;
    try{
@@ -43,7 +45,7 @@ export class Classroom {
     try{
      if(data.type==='share'){const value=sanitizeSection(data.section,data.value);const issue=validation(data.section,value);if(issue)throw new Error(issue);person.sections[data.section]={value,updated:Date.now()};}
      else if(data.type==='withdraw')delete person.sections[data.section];else return;
-     this.persist();c.send({type:'ack',request:data.request,section:data.section,operation:data.type});
+     await this.persist();c.send({type:'ack',request:data.request,section:data.section,operation:data.type});
     }catch(e){this.room.people[id]=before;c.send({type:'error',request:data.request,message:e.name==='QuotaExceededError'?'강사 기기의 저장 공간이 부족합니다.':e.message});}
    }catch{c.close();}finally{busy=false;}
   });
@@ -59,10 +61,10 @@ export class Participant {
    this.peer.on('open',()=>this.connect());this.peer.on('error',()=>this.offline());this.peer.on('disconnected',()=>this.offline());
   }catch{this.status='이 브라우저에서 연결을 시작하지 못했습니다. 일반 브라우저로 열어 주세요.';this.onChange?.(this);}
  }
- offline(){this.ready=false;this.status='강사 연결 대기 · 작성 내용은 이 기기에 저장돼요';this.onChange?.(this);}
+ offline(){this.ready=false;if(!this.rejected)this.status='강사 연결 대기 · 작성 내용은 이 기기에 저장돼요';this.onChange?.(this);}
  connect(){const clientNonce=crypto.randomUUID();this.conn=this.peer.connect('career-'+this.room,{reliable:true,serialization:'json',metadata:{nonce:clientNonce}});let trusted=false;
   this.conn.on('data',async data=>{if(!safeMessage(data))return;try{
-   if(data.type==='hello'&&!trusted){if(!await verify(this.key,data.signature,canonical('career-v1',this.room,clientNonce,data.nonce))){this.status='수업방 인증에 실패했습니다. 강사의 참여 링크를 확인해 주세요.';this.onChange?.(this);return this.conn.close();}trusted=true;this.conn.send({type:'auth',pub:this.identity.pub,signature:await sign(this.identity,canonical('career-student-v1',this.room,clientNonce,data.nonce))});}
+   if(data.type==='hello'&&!trusted){if(!await verifyTeacherRoom(this.room,this.key,data.authorization)||!await verify(this.key,data.signature,canonical('career-v1',this.room,clientNonce,data.nonce))){this.rejected=true;this.status='강사 인증을 확인하지 못했습니다. 강사에게 다시 로그인하도록 요청해 주세요.';this.onChange?.(this);return this.conn.close();}trusted=true;this.conn.send({type:'auth',pub:this.identity.pub,signature:await sign(this.identity,canonical('career-student-v1',this.room,clientNonce,data.nonce))});}
    else if(trusted&&data.type==='ready'){this.ready=true;this.alias=data.alias;this.title=data.title;this.status=`${this.alias} · 수업방 연결됨`;this.onChange?.(this);}
    else if(trusted&&(data.type==='ack'||data.type==='error')){const p=this.pending.get(data.request);if(p){clearTimeout(p.timer);this.pending.delete(data.request);data.type==='ack'?p.resolve(data):p.reject(new Error(data.message));}}
   }catch{this.offline();}});

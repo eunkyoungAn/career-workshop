@@ -1,0 +1,27 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+const enc=new TextEncoder(),pack=b=>Buffer.from(b).toString('base64');
+const pair=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
+const salt=crypto.getRandomValues(new Uint8Array(32)),iv=crypto.getRandomValues(new Uint8Array(12));
+const material=await crypto.subtle.importKey('raw',enc.encode('4826'),'PBKDF2',false,['deriveKey']);
+const key=await crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt,iterations:1000},material,{name:'AES-GCM',length:256},false,['encrypt']);
+const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:enc.encode(JSON.stringify(['career-teacher-authority-v1']))},key,enc.encode(JSON.stringify(await crypto.subtle.exportKey('jwk',pair.privateKey))));
+const settings={iterations:1000,salt:pack(salt),iv:pack(iv),encryptedAuthority:pack(cipher),publicKey:await crypto.subtle.exportKey('jwk',pair.publicKey)};
+globalThis.fetch=async()=>new Response(JSON.stringify(settings));
+const storage=new Map();globalThis.localStorage={getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v)};
+const auth=await import('../teacher-auth.js');
+test('Instructor number gates capabilities and encrypts classroom data',async()=>{
+ assert.equal(auth.isTeacherUnlocked(),false);
+ await assert.rejects(auth.unlockTeacher('0000'));assert.equal(auth.isTeacherUnlocked(),false);
+ await auth.unlockTeacher('48-26');assert.equal(auth.isTeacherUnlocked(),true);
+ const room={id:'test-room',identity:{pub:'public-room-key',private:'PRIVATE-TEST-KEY'},title:'PRIVATE-TITLE',people:{student:{answer:'PRIVATE-ANSWER'}}};
+ await auth.authorizeRoom(room);assert.ok(await auth.verifyTeacherRoom(room.id,room.identity.pub,room.authorization));
+ assert.equal(await auth.verifyTeacherRoom('another-room',room.identity.pub,room.authorization),false);
+ assert.equal(await auth.verifyTeacherRoom(room.id,'forged-key',room.authorization),false);
+ await auth.saveTeacherRoom(room);const stored=storage.get('career-v1:room:test-room');assert.ok(!stored.includes('PRIVATE-'));assert.equal(JSON.parse(stored).encrypted,1);
+ assert.deepEqual(await auth.readTeacherRoom('test-room'),room);
+ auth.lockTeacher();assert.equal(auth.isTeacherUnlocked(),false);await assert.rejects(auth.readTeacherRoom('test-room'));await assert.rejects(auth.authorizeRoom(room));
+ await auth.unlockTeacher('4826');const broken=JSON.parse(stored);broken.data='AAAA'+broken.data.slice(4);storage.set('career-v1:room:test-room',JSON.stringify(broken));await assert.rejects(auth.readTeacherRoom('test-room'));
+ const legacy={id:'old-room',identity:{pub:'old-key',private:'LEGACY-SECRET'},title:'기존 수업방',people:{}};storage.set('career-v1:room:old-room',JSON.stringify(legacy));const restored=await auth.readTeacherRoom('old-room');assert.equal(restored.title,'기존 수업방');assert.ok(restored.authorization);assert.ok(!storage.get('career-v1:room:old-room').includes('LEGACY-SECRET'));
+ auth.lockTeacher();
+});

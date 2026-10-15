@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "iterations": 600000,
+  "salt": "wRItKv905XXJW7tTnQ96L7zhn30Mp7sLcZif4Y2KiHk=",
+  "iv": "xJ80NOqmjbMY8EMu",
+  "encryptedAuthority": "ajequ6CUVT3HKxnK3p+k2Lg8C/GV7fq0qLMSRnidK+GnESmdH4KdSqt5JOw/tTHwu/zS/euTP17Dv6C1oGeTtuI/XDcmEQaolBrEGBNQ5vw2nGbII1o1vRDtTPJA4sSMmN+0h/CBT06MD6O7Q0XRAHNOeon1ZW2/ITh8qiWE+3mzEci+ezp0tkGLYdTbJ26DG3MFAJWbLUkdWO8OZ+nhhLGSZkderZjJipYFPdSxjRuT5EtyLkKadFtsBgQvaiJm2F5/grjcEXDhLSf9eYJFiFH6tiucB69NYC4KWTs6",
+  "publicKey": {
+    "key_ops": [
+      "verify"
+    ],
+    "ext": true,
+    "kty": "EC",
+    "x": "aXPrxcsoz32MSo9jOcoOvx2RhJpVAFXxG3UGqmjMr5U",
+    "y": "vdZuIRw5LczZA2arqQHU3EIPCHe-zmn1bL6M97-Vkdo",
+    "crv": "P-256"
+  }
+}
